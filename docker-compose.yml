@@ -1,0 +1,51 @@
+name: chat-demo
+
+services:
+  ai-service:
+    build: ./ai-service
+    networks:
+      - internal
+    volumes:
+      - ai-service-data:/data
+    restart: unless-stopped
+
+  core:
+    build:
+      context: ./core
+      additional_contexts:
+        proto: ./ai-service/proto
+    environment:
+      AI_SERVICE_TARGET: ai-service:50051
+      CORE_DB_PATH: /data/core
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - internal
+      - public
+    ports:
+      - "8080:8080"
+    volumes:
+      - core-data:/data
+    depends_on:
+      - ai-service
+    restart: unless-stopped
+
+  ui:
+    build: ./ui
+    networks:
+      - public
+    ports:
+      - "3000:80"
+    depends_on:
+      - core
+    restart: unless-stopped
+
+networks:
+  internal:
+    internal: true
+  public:
+    driver: bridge
+
+volumes:
+  ai-service-data:
+  core-data:
