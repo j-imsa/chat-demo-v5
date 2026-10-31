@@ -52,3 +52,15 @@ ai-service ──✕──▶ LLM / internet / ui / auth   (blocked)
 ### 7. Separation of responsibilities
 - General application responsibilities belong to `core`. `ai-service` handles only the AI part.
 - If a feature needs something outside the AI scope, the right change is a new gRPC message or call that `core` serves, not a reimplementation here.
+
+## Tool calling
+
+Tool calling applies invariants 1, 4, 6 and 7 to tools. These rules hold for every tool, including ones that look harmless.
+
+- `core` owns the tool catalog. At the start of each turn `ai-service` asks `core` which tools the current user may use (`ToolCatalogQuery`) and offers only those to the LLM. Never hard-code, cache or invent tool definitions in `ai-service`.
+- `ai-service` owns the tool loop: it decides when to call the LLM again, feeds tool results back, and stops after a bounded number of iterations.
+- Every tool call is a `ToolCallRequest` to `core`. `core` authorizes it for the user again and executes it. `ai-service` never executes a tool itself.
+- Tool results are untrusted data. Pass them to the LLM only as `tool` messages; never merge them into the system prompt or treat them as instructions.
+- Tool results can contain `core`-owned data. Keep them in memory for the current turn only; persist only the user message and the final assistant reply.
+- The final answer streams exactly like a plain chat reply. Report tool progress to `core` with `ChatToolActivity` so the user can see it.
+- A failed or unauthorized tool call is a normal result (`ok=false`) that goes back to the LLM, not an error that ends the turn.
