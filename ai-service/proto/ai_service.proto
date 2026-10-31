@@ -15,6 +15,8 @@ message CoreToAi {
     LlmAvailability llm_availability = 2;
     LlmChunk llm_chunk = 3;
     LlmCompletion llm_completion = 4;
+    ToolCatalog tool_catalog = 5;
+    ToolResult tool_result = 6;
   }
 }
 
@@ -24,6 +26,9 @@ message AiToCore {
     LlmCallRequest llm_call_request = 2;
     ChatDelta chat_delta = 3;
     ChatCompleted chat_completed = 4;
+    ToolCatalogQuery tool_catalog_query = 5;
+    ToolCallRequest tool_call_request = 6;
+    ChatToolActivity chat_tool_activity = 7;
   }
 }
 
@@ -54,17 +59,22 @@ enum Role {
   SYSTEM = 1;
   USER = 2;
   ASSISTANT = 3;
+  TOOL = 4;
 }
 
 message LlmMessage {
   Role role = 1;
   string content = 2;
+  repeated ToolCall tool_calls = 3;
+  string tool_call_id = 4;
+  string tool_name = 5;
 }
 
 message LlmCallRequest {
   string request_id = 1;
   repeated LlmMessage messages = 2;
   float temperature = 3;
+  repeated ToolDefinition tools = 4;
 }
 
 message LlmChunk {
@@ -76,6 +86,7 @@ message LlmCompletion {
   string request_id = 1;
   bool ok = 2;
   string error = 3;
+  repeated ToolCall tool_calls = 4;
 }
 
 message ChatDelta {
@@ -92,4 +103,51 @@ enum Status {
 message ChatCompleted {
   Status status = 1;
   string message = 2;
+}
+
+message ToolDefinition {
+  string name = 1;
+  string description = 2;
+  string parameters_json_schema = 3;
+}
+
+message ToolCall {
+  string id = 1;
+  string name = 2;
+  string arguments_json = 3;
+}
+
+message ToolCatalogQuery {
+  string request_id = 1;
+}
+
+message ToolCatalog {
+  string request_id = 1;
+  repeated ToolDefinition tools = 2;
+}
+
+message ToolCallRequest {
+  string request_id = 1;
+  ToolCall call = 2;
+}
+
+message ToolResult {
+  string request_id = 1;
+  string call_id = 2;
+  bool ok = 3;
+  string content = 4;
+  string error = 5;
+}
+
+enum ToolPhase {
+  TOOL_PHASE_UNSPECIFIED = 0;
+  STARTED = 1;
+  SUCCEEDED = 2;
+  FAILED = 3;
+}
+
+message ChatToolActivity {
+  string call_id = 1;
+  string name = 2;
+  ToolPhase phase = 3;
 }
