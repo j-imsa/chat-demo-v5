@@ -1,5 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { ChatStatus, streamChat } from "./api";
+import { ChatStatus, streamChat, ToolPhase } from "./api";
+
+type ToolActivity = { callId: string; name: string; phase: ToolPhase };
 
 type Message = {
   id: number;
@@ -7,7 +9,20 @@ type Message = {
   content: string;
   status?: ChatStatus | "ERROR" | "STREAMING";
   note?: string;
+  tools?: ToolActivity[];
 };
+
+const TOOL_LABELS: Record<ToolPhase, (name: string) => string> = {
+  STARTED: (name) => `Running tool ${name}…`,
+  SUCCEEDED: (name) => `Used tool ${name}`,
+  FAILED: (name) => `Tool ${name} failed`,
+};
+
+function upsertTool(tools: ToolActivity[] = [], activity: ToolActivity): ToolActivity[] {
+  return tools.some((t) => t.callId === activity.callId)
+    ? tools.map((t) => (t.callId === activity.callId ? activity : t))
+    : [...tools, activity];
+}
 
 function newConversationId(): string {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -55,6 +70,8 @@ export default function ChatScreen({ onOpenSettings }: { onOpenSettings: () => v
         text,
         {
           onDelta: (content) => updateAssistant(assistantId, (m) => ({ ...m, content: m.content + content })),
+          onTool: (callId, name, phase) =>
+            updateAssistant(assistantId, (m) => ({ ...m, tools: upsertTool(m.tools, { callId, name, phase }) })),
           onDone: (status, message) => updateAssistant(assistantId, (m) => ({ ...m, status, note: message })),
           onError: (message) => updateAssistant(assistantId, (m) => ({ ...m, status: "ERROR", note: message })),
         },
@@ -87,6 +104,15 @@ export default function ChatScreen({ onOpenSettings }: { onOpenSettings: () => v
         {messages.length === 0 && <p className="muted">Send a message to start.</p>}
         {messages.map((m) => (
           <div key={m.id} className={`message ${m.role} ${m.status?.toLowerCase() ?? ""}`}>
+            {m.tools && m.tools.length > 0 && (
+              <div className="tools">
+                {m.tools.map((t) => (
+                  <span key={t.callId} className={`tool ${t.phase.toLowerCase()}`}>
+                    {TOOL_LABELS[t.phase](t.name)}
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="content">
               {m.content}
               {m.status === "STREAMING" && <span className="cursor">▍</span>}

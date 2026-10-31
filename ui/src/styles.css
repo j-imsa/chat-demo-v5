@@ -173,6 +173,32 @@ input {
   background: #fff8e6;
 }
 
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.tool {
+  font-size: 0.8rem;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: var(--bg);
+}
+
+.tool.succeeded {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.tool.failed {
+  color: var(--error);
+  border-color: var(--error);
+}
+
 .message .content {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

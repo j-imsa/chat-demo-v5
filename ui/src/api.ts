@@ -7,8 +7,11 @@ export type LlmConfig = {
 
 export type ChatStatus = "OK" | "NO_LLM" | "LLM_ERROR";
 
+export type ToolPhase = "STARTED" | "SUCCEEDED" | "FAILED";
+
 export type ChatEvents = {
   onDelta: (content: string) => void;
+  onTool: (callId: string, name: string, phase: ToolPhase) => void;
   onDone: (status: ChatStatus, message: string) => void;
   onError: (message: string) => void;
 };
@@ -85,6 +88,9 @@ function dispatch(block: string, events: ChatEvents): boolean {
   switch (event) {
     case "delta":
       events.onDelta(payload.content);
+      return false;
+    case "tool":
+      events.onTool(payload.callId, payload.name, payload.phase);
       return false;
     case "done":
       events.onDone(payload.status, payload.message);
