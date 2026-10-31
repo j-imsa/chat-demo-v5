@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package aiservice.v1;
+
+option java_package = "com.example.core.grpc.v1";
+option java_multiple_files = true;
+
+service AiService {
+  rpc Chat(stream CoreToAi) returns (stream AiToCore);
+}
+
+message CoreToAi {
+  oneof payload {
+    ChatRequest chat_request = 1;
+    LlmAvailability llm_availability = 2;
+    LlmChunk llm_chunk = 3;
+    LlmCompletion llm_completion = 4;
+  }
+}
+
+message AiToCore {
+  oneof payload {
+    LlmAvailabilityQuery llm_availability_query = 1;
+    LlmCallRequest llm_call_request = 2;
+    ChatDelta chat_delta = 3;
+    ChatCompleted chat_completed = 4;
+  }
+}
+
+message ChatRequest {
+  string conversation_id = 1;
+  string user_id = 2;
+  string message = 3;
+}
+
+message LlmAvailabilityQuery {
+  string request_id = 1;
+}
+
+message LlmAvailability {
+  string request_id = 1;
+  bool available = 2;
+  LlmInfo info = 3;
+  string reason = 4;
+}
+
+message LlmInfo {
+  string provider = 1;
+  string model = 2;
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  SYSTEM = 1;
+  USER = 2;
+  ASSISTANT = 3;
+}
+
+message LlmMessage {
+  Role role = 1;
+  string content = 2;
+}
+
+message LlmCallRequest {
+  string request_id = 1;
+  repeated LlmMessage messages = 2;
+  float temperature = 3;
+}
+
+message LlmChunk {
+  string request_id = 1;
+  string content = 2;
+}
+
+message LlmCompletion {
+  string request_id = 1;
+  bool ok = 2;
+  string error = 3;
+}
+
+message ChatDelta {
+  string content = 1;
+}
+
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  OK = 1;
+  NO_LLM = 2;
+  LLM_ERROR = 3;
+}
+
+message ChatCompleted {
+  Status status = 1;
+  string message = 2;
+}
