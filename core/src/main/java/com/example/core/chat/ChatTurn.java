@@ -1,22 +1,29 @@
 package com.example.core.chat;
 
+import com.example.core.auth.CurrentUser;
 import com.example.core.grpc.v1.AiServiceGrpc;
 import com.example.core.grpc.v1.AiToCore;
 import com.example.core.grpc.v1.ChatCompleted;
 import com.example.core.grpc.v1.ChatRequest;
+import com.example.core.grpc.v1.ChatToolActivity;
 import com.example.core.grpc.v1.CoreToAi;
 import com.example.core.grpc.v1.LlmAvailability;
 import com.example.core.grpc.v1.LlmCallRequest;
 import com.example.core.grpc.v1.LlmChunk;
 import com.example.core.grpc.v1.LlmCompletion;
 import com.example.core.grpc.v1.LlmInfo;
+import com.example.core.grpc.v1.ToolCall;
+import com.example.core.grpc.v1.ToolCallRequest;
+import com.example.core.grpc.v1.ToolCatalog;
 import com.example.core.llm.OllamaClient;
 import com.example.core.llmconfig.LlmConfig;
 import com.example.core.llmconfig.LlmConfigService;
+import com.example.core.tools.ToolRegistry;
 import io.grpc.Status;
 import io.grpc.stub.ClientCallStreamObserver;
 import io.grpc.stub.StreamObserver;
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
@@ -32,17 +39,22 @@ final class ChatTurn implements StreamObserver<AiToCore> {
     private static final String NOT_CONFIGURED = "No LLM is configured in core";
 
     private final SseEmitter emitter;
+    private final CurrentUser user;
     private final LlmConfigService llmConfigs;
     private final OllamaClient ollama;
+    private final ToolRegistry tools;
     private final ExecutorService llmExecutor;
     private final AtomicBoolean finished = new AtomicBoolean();
     private volatile boolean cancelled;
     private ClientCallStreamObserver<CoreToAi> outbound;
 
-    ChatTurn(SseEmitter emitter, LlmConfigService llmConfigs, OllamaClient ollama, ExecutorService llmExecutor) {
+    ChatTurn(SseEmitter emitter, CurrentUser user, LlmConfigService llmConfigs, OllamaClient ollama,
+             ToolRegistry tools, ExecutorService llmExecutor) {
         this.emitter = emitter;
+        this.user = user;
         this.llmConfigs = llmConfigs;
         this.ollama = ollama;
+        this.tools = tools;
         this.llmExecutor = llmExecutor;
     }
 
@@ -59,7 +71,10 @@ final class ChatTurn implements StreamObserver<AiToCore> {
         switch (message.getPayloadCase()) {
             case LLM_AVAILABILITY_QUERY -> answerAvailability(message.getLlmAvailabilityQuery().getRequestId());
             case LLM_CALL_REQUEST -> llmExecutor.submit(() -> runLlmCall(message.getLlmCallRequest()));
+            case TOOL_CATALOG_QUERY -> answerToolCatalog(message.getToolCatalogQuery().getRequestId());
+            case TOOL_CALL_REQUEST -> llmExecutor.submit(() -> runToolCall(message.getToolCallRequest()));
             case CHAT_DELTA -> emit("delta", Map.of("content", message.getChatDelta().getContent()));
+            case CHAT_TOOL_ACTIVITY -> emitToolActivity(message.getChatToolActivity());
             case CHAT_COMPLETED -> complete(message.getChatCompleted());
             case PAYLOAD_NOT_SET -> log.warn("ai-service sent an empty message");
         }
@@ -94,16 +109,33 @@ final class ChatTurn implements StreamObserver<AiToCore> {
         send(CoreToAi.newBuilder().setLlmAvailability(availability).build());
     }
 
+    private void answerToolCatalog(String requestId) {
+        send(CoreToAi.newBuilder()
+                .setToolCatalog(ToolCatalog.newBuilder().setRequestId(requestId).addAllTools(tools.catalogFor(user)))
+                .build());
+    }
+
+    private void runToolCall(ToolCallRequest request) {
+        if (!cancelled) {
+            send(CoreToAi.newBuilder().setToolResult(tools.execute(user, request.getRequestId(), request.getCall())).build());
+        }
+    }
+
+    private void emitToolActivity(ChatToolActivity activity) {
+        emit("tool", Map.of("callId", activity.getCallId(), "name", activity.getName(), "phase", activity.getPhase().name()));
+    }
+
     private void runLlmCall(LlmCallRequest call) {
         LlmCompletion.Builder completion = LlmCompletion.newBuilder().setRequestId(call.getRequestId());
         try {
             LlmConfig config = llmConfigs.current().orElseThrow(() -> new IllegalStateException(NOT_CONFIGURED));
-            ollama.streamChat(config, call.getMessagesList(), call.getTemperature(),
+            List<ToolCall> toolCalls = ollama.streamChat(config, call.getMessagesList(), call.getToolsList(),
+                    call.getTemperature(),
                     token -> send(CoreToAi.newBuilder()
                             .setLlmChunk(LlmChunk.newBuilder().setRequestId(call.getRequestId()).setContent(token))
                             .build()),
                     () -> cancelled);
-            completion.setOk(true);
+            completion.setOk(true).addAllToolCalls(toolCalls);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             completion.setOk(false).setError("interrupted");

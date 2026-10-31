@@ -5,6 +5,7 @@ import com.example.core.grpc.v1.AiServiceGrpc;
 import com.example.core.grpc.v1.ChatRequest;
 import com.example.core.llm.OllamaClient;
 import com.example.core.llmconfig.LlmConfigService;
+import com.example.core.tools.ToolRegistry;
 import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,14 +18,16 @@ class ChatService {
     private final AiServiceGrpc.AiServiceStub aiService;
     private final LlmConfigService llmConfigs;
     private final OllamaClient ollama;
+    private final ToolRegistry tools;
     private final ExecutorService llmExecutor;
     private final Duration sseTimeout;
 
     ChatService(AiServiceGrpc.AiServiceStub aiService, LlmConfigService llmConfigs, OllamaClient ollama,
-                ExecutorService llmExecutor, @Value("${chat.sse-timeout}") Duration sseTimeout) {
+                ToolRegistry tools, ExecutorService llmExecutor, @Value("${chat.sse-timeout}") Duration sseTimeout) {
         this.aiService = aiService;
         this.llmConfigs = llmConfigs;
         this.ollama = ollama;
+        this.tools = tools;
         this.llmExecutor = llmExecutor;
         this.sseTimeout = sseTimeout;
     }
@@ -36,7 +39,7 @@ class ChatService {
                 .setUserId(user.id())
                 .setMessage(message)
                 .build();
-        new ChatTurn(emitter, llmConfigs, ollama, llmExecutor).start(aiService, request);
+        new ChatTurn(emitter, user, llmConfigs, ollama, tools, llmExecutor).start(aiService, request);
         return emitter;
     }
 }
